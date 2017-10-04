@@ -40,8 +40,5 @@ var=c('PE1', 'PB', 'ROIC','ROA','ASSETTURNOVER','EBITDA','MARKETCAP','DE','BVPS'
 models=c()
 
 for(i in 1:length(var)){
-  model[i]=lm(
-  }else{
-    ln_returns[i]=-9999;
-  }
+  model[i]=lm(ln_returns~var[i], data=factorDataReduced)
 }
