@@ -31,3 +31,17 @@ plot(factorDataReduced$ln_returns,factorDataReduced$eps)
 factordata_reduced<-subset(factordata,calendardate==20110630)
 
 plot(factordata_reduced$ln_returns,factordata_reduced$eps)
+
+
+#selected variables
+
+var=c('PE1', 'PB', 'ROIC','ROA','ASSETTURNOVER','EBITDA','MARKETCAP','DE','BVPS','CURRENTRATIO','FCFPS','ROIC','ASSETSC','PPNENETS','LIABILITIES','EQUITY','EBIT','REVENUE','RND','CONSOLINC')
+
+models=c()
+
+for(i in 1:length(var)){
+  model[i]=lm(
+  }else{
+    ln_returns[i]=-9999;
+  }
+}
