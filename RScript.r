@@ -1,7 +1,8 @@
-factorData<-read.csv('data_file_ARQ_mod.csv')
+
+factorData<-read.csv('dataFileARQmod.csv')
 names(factorData)
 
-View(factordata)
+View(factorData)
 
 
 #Calculating Log Returns
@@ -25,12 +26,10 @@ factorDataReduced<-subset(factorData,ln_returns>-1000)
 
 View(factorDataReduced)
 
-plot(factorDataReduced$ln_returns,factorDataReduced$eps)
-
 #Selecting Specified date
-factordata_reduced<-subset(factordata,calendardate==20110630)
+factorDataReducedDate<-subset(factorDataReduced,calendardate==20110630)
 
-plot(factordata_reduced$ln_returns,factordata_reduced$eps)
+plot(factorDataReducedDate$eps, factorDataReducedDate$ln_returns)
 
 
 #selected variables
