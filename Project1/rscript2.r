@@ -100,3 +100,5 @@ reduced_file<-data.frame(reduced_file);
 #prepend tickers
 reduced_file<-cbind(tickers_dates, reduced_file);
 View(reduced_file)
+
+write.csv(reduced_file,file="finalData.csv")
