@@ -1,13 +1,45 @@
-#import data
-dataFile<-read.csv("refinedData")
+################################################################### 
+# part I - Importing Data and Calculating Log Returns
+################################################################### 
+
+#importing data
+factorData<-read.csv('dataFileARQmod.csv')
+header<-names(factorData)
+
+#View(factorData)
+
+#Calculating Log Returns
+ln_returns<-vector()
+
+for(i in 1:length(factorData$ticker)){
+  if(identical(factorData$ticker[i+1],factorData$ticker[i])){
+    ln_returns[i]=log(factorData$price[i+1]/factorData$price[i]);
+  }else{
+    ln_returns[i]=-9999;
+  }
+}
+
+ln_returns
+
+#Combining Log Returns to factor data 
+factorData<-cbind(ln_returns,factorData)
+
+#Taking out missing values/outliers
+dataFile<-subset(factorData,ln_returns>-1000)
+
+#writing modified file onto refinedData.csv
+#View(factorDataReduced)
+#write.csv(factorDataReduced,file="refinedData")
+
+################################################################### 
+# part II - Cleaning Data and Removing NAs
+################################################################### 
 
 
-#collect headers
-dataFile_header<-names(dataFile)
 
 #create list of dates
 dataFile_dates<-unique(dataFile$calendardate)
-
+dataFile_header<-names(factorData)
 
 
 #for loop creating all unique data date frames
@@ -73,20 +105,20 @@ row_bind=function(x,y){rbind(x,y)};
 #stacks the rows on top of one another
 reduced_file<-Reduce(row_bind,reduced_list);
 
-
+View(reduced_file)
 #remove NA's using na.omit from reduced data files
-
 #remove NA's
 reduced_file<-na.omit(reduced_file)
 
-#remove columns
+#remove columns date
 reduced_file<-reduced_file[,-5];
 
 #remove column
-reduced_file<-reduced_file[,-2];
+reduced_file<-reduced_file[,-3];
 
 #store tickers
-tickers_dates<-reduced_file[,1:3];
+tickers_dates<-reduced_file[, 1:3];
+View(tickers_dates)
 
 #remove non-factor columns
 reduced_file<-reduced_file[,-(3:1)];
@@ -100,5 +132,38 @@ reduced_file<-data.frame(reduced_file);
 #prepend tickers
 reduced_file<-cbind(tickers_dates, reduced_file);
 View(reduced_file)
+reduced_file_header<-names(reduced_file)
+################################################################### 
+# part III - Making Linear Models
+################################################################### 
+reduced_file_header
+dates<-unique(reduced_file$calendardate)
+factors<-c("ebit","bvps","de","fcfps","marketcap","pb","pe", "netinc","eps","ncf","capex","liabilities",
+           "netmargin","pe1","ebitda","equity","intangibles","revenue","rnd","grossmargin")
+length(factors)
+form<-as.formula(paste("ln_returns~",paste(factors, collapse= "+")))
+model_list<-vector()
+dates[1]
 
-write.csv(reduced_file,file="finalData.csv")
+
+for(i in 1:15){
+  data=subset(reduced_file, calendardate==dates[i])
+  a<-paste("modelDate_",dates[i],sep="")
+  model_list<-c(model_list, a)
+  model<-lm(form,data=data)
+  assign(a, model)
+}
+model_list
+################################################################### 
+# part IV - Creating a Vector of Coefficients
+################################################################### 
+
+coeff_list<-vector()
+for(i in 1:length(model_list)){
+  a<-paste("coeffDate_", dates[i],spe="")
+  coeff_list<-c(coeff_list, a)
+  coeff<-coefficients(get(model_list[i]))
+  assign(a,coeff)
+}
+coeff_list
+get(coeff_list[1])
