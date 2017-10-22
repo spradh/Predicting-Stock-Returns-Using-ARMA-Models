@@ -1,3 +1,12 @@
+######################
+# part 0 - Setting Directory
+######################
+filename = "maya_pradhan.R"
+filepath = file.choose()  # browse and select maya_pradhan.R in the window
+dir = substr(filepath, 1, nchar(filepath)-nchar(filename))
+setwd(dir)
+
+
 ################################################################### 
 # part I - Importing Data and Calculating Log Returns
 ################################################################### 
@@ -6,6 +15,7 @@
 factorData<-read.csv('dataFileARQmod.csv')
 header<-names(factorData)
 
+header
 #View(factorData)
 
 #Calculating Log Returns
@@ -19,11 +29,14 @@ for(i in 1:length(factorData$ticker)){
   }
 }
 
-ln_returns
+
 
 #Combining Log Returns to factor data 
 factorData<-cbind(ln_returns,factorData)
 
+header<-names(factorData)
+
+header
 #Taking out missing values/outliers
 dataFile<-subset(factorData,ln_returns>-1000)
 
@@ -80,7 +93,7 @@ for(j in dataFile_uniqueDate_dataFrame_list){
 }
 
 
-#merge all NA_uniqueDate_lists to obtain col;umns to be deleted
+#merge all NA_uniqueDate_lists to obtain columns to be deleted
 
 NA_uniqueMerged_list<-vector()
 for(i in NA_uniqueDate_list){
@@ -88,12 +101,13 @@ for(i in NA_uniqueDate_list){
 }
 NA_uniqueMerged_list<-unique(NA_uniqueMerged_list)
 
-reduced_list<-vector("list", length=length(dataFile_dates))
+
 
 
 #forloop creating all unique date reduced data frames with appropriate columns removed
 
-reduced_dataFile_uniqueDate_dataFrame_list<-vector();
+reduced_list<-vector("list", length=length(dataFile_dates));
+
 for(i in 1:length(dataFile_uniqueDate_dataFrame_list)){
   dataFile_reduced<-get(dataFile_uniqueDate_dataFrame_list[i])[-which(dataFile_header %in% NA_uniqueMerged_list)];
   reduced_list[[i]]<-dataFile_reduced;
@@ -133,29 +147,57 @@ reduced_file<-data.frame(reduced_file);
 reduced_file<-cbind(tickers_dates, reduced_file);
 View(reduced_file)
 reduced_file_header<-names(reduced_file)
+
+#removing extreme only outliers in selected variables
+reduced_file <- reduced_file[reduced_file$bvps > -4e+05,]
+reduced_file <- reduced_file[reduced_file$de > -110000,]
+reduced_file <- reduced_file[reduced_file$dps < 400,]
+reduced_file <- reduced_file[reduced_file$ebit > -2e+10,]
+reduced_file <- reduced_file[reduced_file$pb < 1.2e+07,]
+reduced_file <- reduced_file[reduced_file$netinc < 4e+10,]
+reduced_file <- reduced_file[reduced_file$tbvps < 60000,]
+
+
+
 ################################################################### 
-# part III - Making Linear Models
+# part III - Importing financial tickers
 ################################################################### 
-reduced_file_header
-dates<-unique(reduced_file$calendardate)
-factors<-c("ebit","bvps","de","fcfps","marketcap","pb","pe", "netinc","eps","ncf","capex","liabilities",
-           "netmargin","pe1","ebitda","equity","intangibles","revenue","rnd","grossmargin")
+#Importing ticker
+financial_tickers<-read.csv("companylist.csv")
+#filtering all the tickers in the financial sector
+financial_data<-reduced_file[reduced_file$ticker %in% financial_tickers$Symbol,]
+View(financial_data)
+
+################################################################### 
+# part IV - Making Linear Models
+################################################################### 
+
+#Factors
+factors<-c("bvps","de","divyield","dps","ebit","ebitda","eps","fcf","fcfps","grossmargin","intangibles","ncfi",
+           "netmargin","pb","pe","pe1","revenue","netinc","rnd","tbvps")
+#unique dates
+dates<-sort(unique(financial_data$calendardate))
+
 length(factors)
+
+#creating the formula
 form<-as.formula(paste("ln_returns~",paste(factors, collapse= "+")))
 model_list<-vector()
-dates[1]
+
 
 
 for(i in 1:15){
-  data=subset(reduced_file, calendardate==dates[i])
+  data=subset(financial_data, calendardate==dates[i])
   a<-paste("modelDate_",dates[i],sep="")
   model_list<-c(model_list, a)
   model<-lm(form,data=data)
   assign(a, model)
 }
-model_list
+
+
+
 ################################################################### 
-# part IV - Creating a Vector of Coefficients
+# part V - Creating a matrix of Coefficients
 ################################################################### 
 
 coeff_list<-vector()
@@ -165,5 +207,20 @@ for(i in 1:length(model_list)){
   coeff<-coefficients(get(model_list[i]))
   assign(a,coeff)
 }
-coeff_list
-get(coeff_list[1])
+
+coeffMatrix<-vector()
+for(i in 1:15){
+  coeffMatrix<-cbind(coeffMatrix,get(coeff_list[i]))
+}
+dates
+colnames(coeffMatrix)<-dates[1:15]
+coeffMatrix
+
+summary_list<-vector()
+for(i in 1:length(model_list)){
+  a<-paste("summaryDate_", dates[i],spe="")
+  summary_list<-c(summary_list, a)
+  sum<-summary(get(model_list[i]))
+  assign(a,sum)
+}
+
