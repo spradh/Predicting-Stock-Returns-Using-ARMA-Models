@@ -40,9 +40,7 @@ header
 #Taking out missing values/outliers
 dataFile<-subset(factorData,ln_returns>-1000)
 
-#writing modified file onto refinedData.csv
-#View(factorDataReduced)
-#write.csv(factorDataReduced,file="refinedData")
+
 
 ################################################################### 
 # part II - Cleaning Data and Removing NAs
@@ -131,7 +129,7 @@ View(reduced_file)
 
 
 ##################################
-#Cleaning data and scaling
+#Creating Training and Test Sets
 ##################################
 
 reduced_file_header<-names(reduced_file)
@@ -167,6 +165,11 @@ financial_tickers<-read.csv("companylist.csv")
 factors<-c("bvps","de","divyield","dps","ebit","ebitda","eps","fcf","fcfps","grossmargin","intangibles","ncfi",
            "netmargin","pb","pe","pe1","revenue","netinc","rnd","tbvps")
 
+
+
+################################################################### 
+# part IV - Generating a Coefficient Matrix List
+################################################################### 
 coeffMatrix_list<-vector()
 for(i in 1:5){
   c<-paste("coeffMatrix_",dataFile_dates[i+15])
@@ -176,13 +179,13 @@ for(i in 1:5){
   fin_data<-fin_data[fin_data$ticker %in% financial_tickers$Symbol,]
   
   
-  tkr_dates<-fin_data[,1:3];
+  tkr_dates<-fin_data[,1:3]
   fin_data<-fin_data[,-(1:3)]
   
   #cast as data frame
-  fin_data<-data.frame(apply(fin_data[,factors],2,scale))
+  #fin_data<-data.frame(apply(fin_data[,factors],2,scale))
   #prepend tickers
-  fin_data<-cbind(tkr_dates,fin_data[,factors])
+  fin_data<-cbind(tkr_dates,fin_data)
   #removing extreme only outliers in selected variables
   fin_data <- fin_data[fin_data$bvps > -4e+05,]
   fin_data <- fin_data[fin_data$de > -110000,]
@@ -192,11 +195,9 @@ for(i in 1:5){
   fin_data <- fin_data[fin_data$netinc < 4e+10,]
   fin_data <- fin_data[fin_data$tbvps < 60000,]
   
-  ################################################################### 
-  # part IV - Making Linear Models
-  ################################################################### 
   
-  
+  #Making Linear Models
+  ################################################################### 
   #unique dates
   dates<-sort(unique(fin_data$calendardate))
   
@@ -212,11 +213,7 @@ for(i in 1:5){
     model<-lm(form,data=data)
     assign(a, model)
   }
-  
-  
-  
-  ################################################################### 
-  # part V - Creating a matrix of Coefficients
+  #Creating a matrix of Coefficients for given Time Step
   ################################################################### 
   
   coeff_list<-vector()
@@ -245,75 +242,71 @@ for(i in 1:5){
 
 
 ###################################333
-# Scaling next time step
+#Generating Beta's for Next Time Step
 ###################################3
-training_dat<-get(training_data_frame_list[1])
-dim(training_dat)
 
-
-#Training Mean
-m<-apply(training_dat[,factors],2,mean)
-#Training Sd
-s<-apply(training_dat[,factors],2,sd)
-
-next.step<-get(test_data_frame_list[1])
-
-
-next.tkr_dates<-next.step[,1:3];
-next.step<-next.step[,-(1:3)]
-
-#cast as data frame
-View(next.step)
-next.step<-apply(next.step[,factors],2,scale, center=m ,scale=s)
-next.step<-cbind(next.tkr_dates,next.step[,factors])
-View(next.step)
-dim(next.step)
-
-
-
-timeStep=1
+aic_Matrix<-vector()
+for(timeStep in 1:5){
+  training_dat<-get(training_data_frame_list[timeStep])
+  dim(training_dat)
   
-cat("\n\nTime Step ", timeStep,'\n')
-p=1
-q=1
-
-beta<-vector()
-for(i in 1:21){
-  model<-arima(get(coeffMatrix_list[1])[i,], order = c(p,0,q), method='ML')
-  model
-  #to make sure there's no patter inside the residuals
-  cat("for beta ",i,'\n')
-  print(model$aic) #aic should be as small as possible good number is <100
-  #box and jenkins
-  beta<-c(beta, predict(model,n.ahead=1)$pred[1])
-}
   
-beta
-m
-s
+  #Training Mean
+  m<-apply(training_dat[,factors],2,mean)
+  #Training Sd
+  s<-apply(training_dat[,factors],2,sd)
+  
+  next.step<-get(test_data_frame_list[timeStep])
 
+  next.tkr_dates<-next.step[,1:3];
+  next.step<-next.step[,-(1:3)]
+  
+  # Scaling next time step
+  #next.step<-scale(next.step[,factors], center=m ,scale=s)
+  next.step<-cbind(next.tkr_dates,next.step[,factors])
 
-num_obs=dim(next.step[,factors])[1]
-
-expected_returns<-as.matrix(rep(1,dim(next.step)[1])*beta[1])+as.matrix(next.step[,factors])%*%beta[2:21]
-
-dim(expected_returns)
-
-hist(expected_returns, breaks = 50) #histogram is much more optimistic
-hist(next.step$ln_returns, breaks = 50)
-mean(next.step$ln_returns)
-next.step<-cbind(expected_returns,next.step)
-dim(next.step)
-
-exp_buckets<-vector()
-i=0
-next.step<-next.step[order(-next.step$expected_returns),]
-View(next.step)
-
-for(b in seq(1,num_obs,num_obs/5)){
-  i=i+1
-  a<-paste('bucket_',i,sep="")
-  ex<-next.step[i:(i+num_obs/5-1),]
-  cat('for bucket ',i,' expected value is ', mean(ex$expected_returns),'and  actual value is ', mean(ex$ln_returns),'\n')
+  cat("\n\nTime Step ", timeStep,'\n')
+  
+  #AR order
+  p=0
+  #MA order
+  q=1
+  
+  beta<-vector()
+  aic<-vector()
+  for(i in 1:21){
+    model<-arima(get(coeffMatrix_list[timeStep])[i,], order = c(p,0,q), method='ML')
+    #to make sure there's no patter inside the residuals
+    aic<-c(aic, model$aic) #aic should be as small as possible good number is <100
+    #box and jenkins
+    beta<-c(beta, predict(model,n.ahead=1)$pred[1])
   }
+  aic_Matrix<-cbind(aic_Matrix,aic)
+  beta
+
+  num_obs=dim(next.step[,factors])[1]
+  
+  expected_returns<-as.matrix(rep(1,dim(next.step)[1])*beta[1])+as.matrix(next.step[,factors])%*%beta[2:21]
+  
+  dim(expected_returns)
+  dim(next.step)
+  hist(expected_returns, breaks = 50) #histogram is much more optimistic
+  hist(next.step$ln_returns, breaks = 50)
+  
+  next.step<-cbind(expected_returns,next.step)
+  dim(next.step)
+  
+  exp_buckets<-vector()
+  i=0
+  next.step<-next.step[order(-expected_returns),]
+  
+  for(b in seq(1,num_obs,num_obs/5)){
+    i=i+1
+    a<-paste('bucket_',i,sep="")
+    ex<-next.step[i:(i+num_obs/5-1),]
+    cat('for bucket ',i,' expected value is ', mean(ex$expected_returns),'and  actual value is ', mean(ex$ln_returns),'\n')
+    }
+}
+aic_Matrix>100
+
 
