@@ -165,10 +165,10 @@ form
 
 nn_model_list<-vector()
 for(i in 1:3){
-  a<-paste("Date_",i,sep="")
-
+  a<-paste("Date_",dataFile_dates[i],sep="")
+  
   data<-get(training_data_frame_list[i])
-
+  
   tkr_dates<-data[,1:3]
   data<-data[,-(1:3)]
   
@@ -202,8 +202,7 @@ for(i in 1:3){
   b<-paste(a,paste("_Model_",2,sep=""))
   set.seed(1)
   nn_model<-neuralnet(form,data[,],hidden=c(14),stepmax=1e6)
-  #plot(nn_model)
-  nn_pred<-compute(nn_model,data[,factors])
+  assign(b,nn_model)
   nn_model_list<-c(nn_model_list, b)
   
   #Model 3
@@ -211,9 +210,24 @@ for(i in 1:3){
   b<-paste(a,paste("_Model_",3,sep=""))
   set.seed(1)
   nn_model<-neuralnet(form,data,hidden=c(15),stepmax=1e6)
+  assign(b,nn_model)
   nn_model_list<-c(nn_model_list, b)
   
   
   
   cat("==========================\n")
 }
+
+get(nn_model_list[3])
+
+nn_model_matrix<-matrix(nn_model_list,ncol=3,byrow=T)
+get(nn_model_matrix[2,])
+
+#of node
+error_by_num_node<-vector()
+for(i in 1:9){
+  error_by_num_node<-c(error_by_num_node,get(nn_model_list[i])$result.matrix[1])
+}
+barplot(error_by_num_node)#0.003199477251 
+#error is calculated by 1/2 sum((y-x)^2)
+get(nn_model_matrix[,1])$result.matrix[1]
