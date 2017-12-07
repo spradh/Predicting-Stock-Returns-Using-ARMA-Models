@@ -142,12 +142,11 @@ factors<-c("bvps","de","divyield","dps","ebit","ebitda","eps","fcf","fcfps","gro
 #Creating Training and Test Sets
 ##################################
 
-
 #Traning data frames
 training_data_frame_list<-vector()
-for(i in 1:3){
-  a<-paste("training_data_frame_",dataFile_dates[i],sep="")
-  data<-reduced_file[which(reduced_file$calendardate %in% dataFile_dates[i]),]
+for(i in 1:4){
+  a<-paste("training_data_frame_",dataFile_dates[i+15],sep="")
+  data<-reduced_file[which(reduced_file$calendardate %in% dataFile_dates[i:(i+14)]),]
   #filtering all the tickers in the financial sector
   data<-data[which(data$ticker %in% financial_mid_cap_tickers$Symbol),]
   assign(a,data)
@@ -155,79 +154,71 @@ for(i in 1:3){
 }
 
 
+
+#Test data frames
+test_data_frame_list<-vector()
+for(i in 1:4){
+  a<-paste("test_data_frame_",dataFile_dates[i+15],sep="")
+  data<-reduced_file[which(reduced_file$calendardate==dataFile_dates[i+15]),]
+  #filtering all the tickers in the financial sector
+  data<-data[which(data$ticker %in% financial_mid_cap_tickers$Symbol),]
+  assign(a,data)
+  test_data_frame_list<-c(test_data_frame_list, a)
+}
+
+
+
 ################################################################### 
-# part IV - Generating a Models
+# part IV - Generating a Coefficients
 ################################################################### 
 library(neuralnet)
+
 #creating the formula
 form<-as.formula(paste("ln_returns~",paste(factors, collapse= "+")))
 form
 
-nn_model_list<-vector()
-for(i in 1:3){
-  a<-paste("Date_",dataFile_dates[i],sep="")
+coeffMatrix_list<-vector()
+for(i in 1:5){
+  c<-paste("coeffMatrix_",dataFile_dates[i+15])
   
-  data<-get(training_data_frame_list[i])
+  #importing data frame
+  mid_cap_fin_data<-get(training_data_frame_list[i])
   
-  tkr_dates<-data[,1:3]
-  data<-data[,-(1:3)]
+  #scaling data
+  tkr_dates<-fin_data[,1:3]
+  fin_data<-fin_data[,-(1:3)]
   
-  data<-data.frame(apply(data[,factors],2,scale))
-  
-  data<-cbind(tkr_dates,data)
+  #cast as data frame
+  #fin_data<-data.frame(apply(fin_data[,factors],2,scale))
+  #prepend tickers
+  fin_data<-cbind(tkr_dates,fin_data)
   #removing extreme only outliers in selected variables
-  data <- data[data$bvps > -4e+05,]
-  data <- data[data$de > -110000,]
-  data <- data[data$dps < 400,]
-  data <- data[data$ebit > -2e+10,]
-  data <- data[data$pb < 1.2e+07,]
-  data <- data[data$netinc < 4e+10,]
-  data <- data[data$tbvps < 60000,]
+  fin_data <- fin_data[fin_data$bvps > -4e+05,]
+  fin_data <- fin_data[fin_data$de > -110000,]
+  fin_data <- fin_data[fin_data$dps < 400,]
+  fin_data <- fin_data[fin_data$ebit > -2e+10,]
+  fin_data <- fin_data[fin_data$pb < 1.2e+07,]
+  fin_data <- fin_data[fin_data$netinc < 4e+10,]
+  fin_data <- fin_data[fin_data$tbvps < 60000,]
   
   
-  cat("Models for date: ",dataFile_dates[i],"\n")
+  #Making Neural Network Models
+  ################################################################### 
+  #unique dates
+  dates<-sort(unique(fin_data$calendardate))
   
+  #creating the formula
+  form<-as.formula(paste("ln_returns~",paste(factors, collapse= "+")))
+  form
   
-  #Model 1
-  cat("Model 1\n")
-  b<-paste(a,paste("_Model_",1,sep=""))
-  set.seed(1)
-  nn_model<-neuralnet(form,data,hidden=c(13),stepmax=1e6)
-  assign(b,nn_model)
-  nn_model_list<-c(nn_model_list, b)
-  
-  
-  #Model 2
-  cat("Model 2\n")
-  b<-paste(a,paste("_Model_",2,sep=""))
-  set.seed(1)
-  nn_model<-neuralnet(form,data[,],hidden=c(14),stepmax=1e6)
-  assign(b,nn_model)
-  nn_model_list<-c(nn_model_list, b)
-  
-  #Model 3
-  cat("Model 3\n")
-  b<-paste(a,paste("_Model_",3,sep=""))
-  set.seed(1)
-  nn_model<-neuralnet(form,data,hidden=c(15),stepmax=1e6)
-  assign(b,nn_model)
-  nn_model_list<-c(nn_model_list, b)
-  
-  
-  
-  cat("==========================\n")
+  model_list<-vector()
+  for(i in 1:15){
+    data<-subset(fin_data, calendardate==dates[i])
+    a<-paste("modelDate_",dates[i],sep="")
+     nn_model<-neuralnet(form,data,hidden=c(14),stepmax=1e6)
+    model_list<-c(model_list, a)
+    assign(a, model)
+  } 
 }
 
-get(nn_model_list[3])
 
-nn_model_matrix<-matrix(nn_model_list,ncol=3,byrow=T)
-get(nn_model_matrix[2,])
-
-#of node
-error_by_num_node<-vector()
-for(i in 1:9){
-  error_by_num_node<-c(error_by_num_node,get(nn_model_list[i])$result.matrix[1])
-}
-barplot(error_by_num_node)#0.003199477251 
-#error is calculated by 1/2 sum((y-x)^2)
-get(nn_model_matrix[,1])$result.matrix[1]
