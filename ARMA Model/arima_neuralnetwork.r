@@ -1,7 +1,7 @@
 ######################
 # part 0 - Setting Directory
 ######################
-filename = "neuralhw.R"
+filename = "Pradhan_HW5.R"
 filepath = file.choose()  # browse and select maya_pradhan.R in the window
 dir = substr(filepath, 1, nchar(filepath)-nchar(filename))
 setwd(dir)
@@ -122,17 +122,22 @@ reduced_file<-Reduce(row_bind,reduced_list);
 #remove NA's using na.omit from reduced data files
 #remove NA's
 reduced_file<-na.omit(reduced_file)
-View(reduced_file)
+#View(reduced_file)
 #remove duplicate columns date, dimension colum and reporting period
 reduced_file<-reduced_file[,-c(3,5,6)];
-View(reduced_file)
+#View(reduced_file)
+dataFile_dates<-unique(reduced_file$calendardate)
 
 ################################################################### 
 # part III - Importing financial tickers
 ################################################################### 
 #Importing ticker
-financial_mid_cap_tickers<-read.csv("companylist.csv")
-financial_mid_cap_tickers<-financial_mid_cap_tickers[financial_mid_cap_tickers$MarketCap>=2000000000 & financial_mid_cap_tickers$MarketCap<=10000000000,]
+financial_tickers<-read.csv("companylist.csv")
+dim(financial_tickers)
+#Filtering for midcap tickers
+financial_tickers<-financial_tickers[financial_tickers$MarketCap>=300000000 & financial_tickers$MarketCap<=2000000000,]
+
+
 #Seting Factors
 factors<-c("bvps","de","divyield","dps","ebit","ebitda","eps","fcf","fcfps","grossmargin","intangibles","ncfi",
            "netmargin","pb","pe","pe1","revenue","netinc","rnd","tbvps")
@@ -142,13 +147,14 @@ factors<-c("bvps","de","divyield","dps","ebit","ebitda","eps","fcf","fcfps","gro
 #Creating Training and Test Sets
 ##################################
 
+
 #Traning data frames
 training_data_frame_list<-vector()
 for(i in 1:4){
   a<-paste("training_data_frame_",dataFile_dates[i+15],sep="")
   data<-reduced_file[which(reduced_file$calendardate %in% dataFile_dates[i:(i+14)]),]
   #filtering all the tickers in the financial sector
-  data<-data[which(data$ticker %in% financial_mid_cap_tickers$Symbol),]
+  data<-data[which(data$ticker %in% financial_tickers$Symbol),]
   assign(a,data)
   training_data_frame_list<-c(training_data_frame_list, a)
 }
@@ -161,35 +167,26 @@ for(i in 1:4){
   a<-paste("test_data_frame_",dataFile_dates[i+15],sep="")
   data<-reduced_file[which(reduced_file$calendardate==dataFile_dates[i+15]),]
   #filtering all the tickers in the financial sector
-  data<-data[which(data$ticker %in% financial_mid_cap_tickers$Symbol),]
+  data<-data[which(data$ticker %in% financial_tickers$Symbol),]
   assign(a,data)
   test_data_frame_list<-c(test_data_frame_list, a)
 }
 
 
-
 ################################################################### 
-# part IV - Generating a Coefficients
+# part IV - Generating a Coefficient Matrix List
 ################################################################### 
-library(neuralnet)
-
-#creating the formula
-form<-as.formula(paste("ln_returns~",paste(factors, collapse= "+")))
-form
-
 coeffMatrix_list<-vector()
-for(i in 1:5){
-  c<-paste("coeffMatrix_",dataFile_dates[i+15])
+for(j in 1:4){
+  c<-paste("coeffMatrix_",dataFile_dates[j+15])
   
-  #importing data frame
-  mid_cap_fin_data<-get(training_data_frame_list[i])
+  fin_data<-get(training_data_frame_list[j])
   
-  #scaling data
   tkr_dates<-fin_data[,1:3]
   fin_data<-fin_data[,-(1:3)]
   
   #cast as data frame
-  #fin_data<-data.frame(apply(fin_data[,factors],2,scale))
+  fin_data<-data.frame(apply(fin_data[,factors],2,scale))
   #prepend tickers
   fin_data<-cbind(tkr_dates,fin_data)
   #removing extreme only outliers in selected variables
@@ -202,7 +199,7 @@ for(i in 1:5){
   fin_data <- fin_data[fin_data$tbvps < 60000,]
   
   
-  #Making Neural Network Models
+  #Making Linear Models
   ################################################################### 
   #unique dates
   dates<-sort(unique(fin_data$calendardate))
@@ -212,13 +209,110 @@ for(i in 1:5){
   form
   
   model_list<-vector()
-  for(i in 1:15){
+  for(i in 1:length(dates)){
     data<-subset(fin_data, calendardate==dates[i])
     a<-paste("modelDate_",dates[i],sep="")
-     nn_model<-neuralnet(form,data,hidden=c(14),stepmax=1e6)
-    model_list<-c(model_list, a)
+    model<-lm(form,data=data)
     assign(a, model)
-  } 
+    model_list<-c(model_list, a)
+    
+  }
+  #Creating a matrix of Coefficients for given Time Step
+  ################################################################### 
+  
+  coeff_list<-vector()
+  for(i in 1:length(model_list)){
+    a<-paste("coeffDate_", dates[i],sep="")
+    coeff<-coefficients(get(model_list[i]))
+    assign(a,coeff)
+    coeff_list<-c(coeff_list, a)
+    
+  }
+  
+  coeffMatrix<-vector()
+  for(i in 1:length(model_list)){
+    coeffMatrix<-cbind(coeffMatrix,get(coeff_list[i]))
+  }
+  
+  colnames(coeffMatrix)<-dates[1:15]
+  assign(c, coeffMatrix)
+  coeffMatrix_list<-c(coeffMatrix_list,c)
 }
 
+
+###################################333
+#Generating Beta's for Next Time Step
+##################################3
+library(forecast)
+aic_Matrix<-vector()
+arima_models_list<-vector()
+returns_bucket_list<-vector()
+for(timeStep in 1:4){
+  t_bucket<-paste("buckets_time_step_",(15+timeStep),sep='')
+  
+  #Retrieving Training set
+  training_dat<-get(training_data_frame_list[timeStep])
+  
+  #Training Mean
+  m<-apply(training_dat[,factors],2,mean)
+  #Training Sd
+  s<-apply(training_dat[,factors],2,sd)
+  
+  #Retrieving next time step set
+  next.step<-get(test_data_frame_list[timeStep])
+  
+  next.tkr_dates<-next.step[,1:3]
+  next.step<-next.step[,-(1:3)]
+  
+  # Scaling next time step
+  next.step<-scale(next.step[,factors],center=m,scale=s)
+  next.step<-cbind(next.tkr_dates,next.step[,factors])
+  
+  cat("\n\nTime Step ", 15+timeStep,'\n')
+  
+  beta<-vector()
+  aic<-vector()
+  for(i in 1:21){
+    model<-auto.arima(get(coeffMatrix_list[timeStep])[i,], max.p = 15,max.q = 15, seasonal = T)
+    #to make sure there's no patter inside the residuals
+    aic<-c(aic, model$aic) #aic should be as small as possible good number is <100
+    #box and jenkins
+    #hist(model$residuals)
+    beta<-c(beta, predict(model,n.ahead=1)$pred[1])
+  }
+  aic_Matrix<-cbind(aic_Matrix,aic)
+  
+  num_obs=dim(next.step[,factors])[1]
+  expected_returns<-as.matrix(rep(1,dim(next.step)[1])*beta[1])+as.matrix(next.step[,factors])%*%beta[2:21]
+  next.step<-cbind(expected_returns,next.step)
+  exp_buckets<-vector()
+  next.step<-next.step[order(-expected_returns),]
+  
+  i=0
+  buckets_return<-vector()
+  for(b in seq(1,num_obs,num_obs/5)){
+    i=i+1
+    a<-paste('bucket_',i,sep="")
+    ex<-next.step[b:(b+num_obs/5-1),]
+    exp_return=mean(ex$expected_returns)
+    act_return=mean(mean(ex$ln_returns))
+    ret<-c(exp_return,act_return)
+    buckets_return<-rbind(buckets_return,ret)
+  }
+  colnames(buckets_return)<-c('exp', 'act')
+  rownames(buckets_return)<-1:5
+  assign(t_bucket, buckets_return)
+  returns_bucket_list<-c(returns_bucket_list, t_bucket)
+}
+
+#displaying the Data in a neat form
+for(b in 1:4){
+  bucketMatrix<-get(returns_bucket_list[b])
+  dis<-vector()
+  dis<-cbind(bucketMatrix[,1],rank(-bucketMatrix[,1]),bucketMatrix[,2],rank(-bucketMatrix[,2]))
+  colnames(dis)<-c('expected return','expected rank','actual return','actual rank')
+  rownames(dis)<-1:5
+  cat("\n\nFor Date ", dataFile_dates[b+15],'\n\n')
+  print(dis)
+}
 
