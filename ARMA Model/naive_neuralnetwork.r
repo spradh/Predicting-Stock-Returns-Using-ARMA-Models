@@ -126,6 +126,16 @@ reduced_file<-na.omit(reduced_file)
 #remove duplicate columns date, dimension colum and reporting period
 reduced_file<-reduced_file[,-c(3,5,6)];
 #View(reduced_file)
+
+#removing outliers
+reduced_file <- reduced_file[reduced_file$bvps > -4e+05,]
+reduced_file <- reduced_file[reduced_file$de > -110000,]
+reduced_file <- reduced_file[reduced_file$dps < 400,]
+reduced_file <- reduced_file[reduced_file$ebit > -2e+10,]
+reduced_file <- reduced_file[reduced_file$pb < 1.2e+07,]
+reduced_file <- reduced_file[reduced_file$netinc < 4e+10,]
+reduced_file <- reduced_file[reduced_file$tbvps < 60000,]
+
 dataFile_dates<-unique(reduced_file$calendardate)
 
 ################################################################### 
@@ -133,9 +143,8 @@ dataFile_dates<-unique(reduced_file$calendardate)
 ################################################################### 
 #Importing ticker
 financial_tickers<-read.csv("companylist.csv")
-dim(financial_tickers)
 #Filtering for midcap tickers
-financial_tickers<-financial_tickers[financial_tickers$MarketCap>=300000000 & financial_tickers$MarketCap<=2000000000,]
+financial_tickers<-financial_tickers[financial_tickers$MarketCap>=2000000000 & financial_tickers$MarketCap<=10000000000,]
 
 
 #Seting Factors
@@ -151,8 +160,8 @@ factors<-c("bvps","de","divyield","dps","ebit","ebitda","eps","fcf","fcfps","gro
 #Traning data frames
 training_data_frame_list<-vector()
 for(i in 1:4){
-  a<-paste("training_data_frame_",dataFile_dates[i+15],sep="")
-  data<-reduced_file[which(reduced_file$calendardate %in% dataFile_dates[i:(i+14)]),]
+  a<-paste("training_data_frame_",dataFile_dates[i+14],sep="")
+  data<-reduced_file[which(reduced_file$calendardate %in% dataFile_dates[(i+14)]),]
   #filtering all the tickers in the financial sector
   data<-data[which(data$ticker %in% financial_tickers$Symbol),]
   assign(a,data)
@@ -176,138 +185,78 @@ for(i in 1:4){
 ################################################################### 
 # part IV - Generating a Coefficient Matrix List
 ################################################################### 
-coeffMatrix_list<-vector()
+model_list<-vector()
+library(neuralnet)
 for(j in 1:4){
-  c<-paste("coeffMatrix_",dataFile_dates[j+15])
+
   
-  fin_data<-get(training_data_frame_list[j])
+  train<-get(training_data_frame_list[j])
   
-  tkr_dates<-fin_data[,1:3]
-  fin_data<-fin_data[,-(1:3)]
+  tkr_dates<-train[,1:3]
+  train<-train[,-(1:3)]
   
   #cast as data frame
-  fin_data<-data.frame(apply(fin_data[,factors],2,scale))
+  train<-data.frame(apply(train[,factors],2,scale))
   #prepend tickers
-  fin_data<-cbind(tkr_dates,fin_data)
-  #removing extreme only outliers in selected variables
-  fin_data <- fin_data[fin_data$bvps > -4e+05,]
-  fin_data <- fin_data[fin_data$de > -110000,]
-  fin_data <- fin_data[fin_data$dps < 400,]
-  fin_data <- fin_data[fin_data$ebit > -2e+10,]
-  fin_data <- fin_data[fin_data$pb < 1.2e+07,]
-  fin_data <- fin_data[fin_data$netinc < 4e+10,]
-  fin_data <- fin_data[fin_data$tbvps < 60000,]
-  
-  
-  #Making Linear Models
+  train<-cbind(tkr_dates,train)
+
+  #Making NN Models
   ################################################################### 
-  #unique dates
-  dates<-sort(unique(fin_data$calendardate))
-  
+
   #creating the formula
   form<-as.formula(paste("ln_returns~",paste(factors, collapse= "+")))
   form
+
+
+  a<-paste("modelDate_",dataFile_dates[(14+j)],sep="")
+  model<-neuralnet(form,train,hidden=14,stepmax = 1e+06)
+  assign(a, model)
+  model_list<-c(model_list, a)
   
-  model_list<-vector()
-  for(i in 1:length(dates)){
-    data<-subset(fin_data, calendardate==dates[i])
-    a<-paste("modelDate_",dates[i],sep="")
-    model<-lm(form,data=data)
-    assign(a, model)
-    model_list<-c(model_list, a)
-    
-  }
-  #Creating a matrix of Coefficients for given Time Step
-  ################################################################### 
-  
-  coeff_list<-vector()
-  for(i in 1:length(model_list)){
-    a<-paste("coeffDate_", dates[i],sep="")
-    coeff<-coefficients(get(model_list[i]))
-    assign(a,coeff)
-    coeff_list<-c(coeff_list, a)
-    
-  }
-  
-  coeffMatrix<-vector()
-  for(i in 1:length(model_list)){
-    coeffMatrix<-cbind(coeffMatrix,get(coeff_list[i]))
-  }
-  
-  colnames(coeffMatrix)<-dates[1:15]
-  assign(c, coeffMatrix)
-  coeffMatrix_list<-c(coeffMatrix_list,c)
 }
+dataFile_dates
+model_list
 
-
-###################################333
-#Generating Beta's for Next Time Step
-##################################3
-library(forecast)
-aic_Matrix<-vector()
-arima_models_list<-vector()
-returns_bucket_list<-vector()
-for(timeStep in 1:4){
-  t_bucket<-paste("buckets_time_step_",(15+timeStep),sep='')
-  
-  #Retrieving Training set
-  training_dat<-get(training_data_frame_list[timeStep])
-  
-  #Training Mean
-  m<-apply(training_dat[,factors],2,mean)
-  #Training Sd
-  s<-apply(training_dat[,factors],2,sd)
-  
-  #Retrieving next time step set
-  next.step<-get(test_data_frame_list[timeStep])
-  
-  next.tkr_dates<-next.step[,1:3]
-  next.step<-next.step[,-(1:3)]
-  
-  # Scaling next time step
-  next.step<-scale(next.step[,factors],center=m,scale=s)
-  next.step<-cbind(next.tkr_dates,next.step[,factors])
-  
-  cat("\n\nTime Step ", 15+timeStep,'\n')
-  
-  beta<-vector()
-  aic<-vector()
-  for(i in 1:21){
-    model<-auto.arima(get(coeffMatrix_list[timeStep])[i,], max.p = 15,max.q = 15, seasonal = T)
-    #to make sure there's no patter inside the residuals
-    aic<-c(aic, model$aic) #aic should be as small as possible good number is <100
-    #box and jenkins
-    #hist(model$residuals)
-    beta<-c(beta, predict(model,n.ahead=1)$pred[1])
-  }
-  aic_Matrix<-cbind(aic_Matrix,aic)
-  
-  num_obs=dim(next.step[,factors])[1]
-  expected_returns<-as.matrix(rep(1,dim(next.step)[1])*beta[1])+as.matrix(next.step[,factors])%*%beta[2:21]
-  next.step<-cbind(expected_returns,next.step)
-  exp_buckets<-vector()
-  next.step<-next.step[order(-expected_returns),]
-  
-  i=0
+bucket_list<-vector()
+for(i in 1:4){
+  a<-paste('bucket_',dataFile_dates[i],sep="")
+  test<-get(test_data_frame_list[i])
+  train<-get(training_data_frame_list[i])
+  m<-apply(train[,factors],2,mean)
+  s<-apply(train[,factors],2,sd)
+  tkr_dates<-test[,1:3]
+  test<-test[,-(1:3)]
+  test<-scale(test[,factors],center=m,scale=s)
+  test<-cbind(tkr_dates,test)
+  pred<-compute(get(model_list[i]),test[,factors])
+  test<-cbind(pred$net.result,test)
+  colnames(test)[1]<-"pred"
+  #sorting test test according to predicted returns
+  test<-test[order(-test$pred),]
+  num_obs=dim(test)[1]
   buckets_return<-vector()
+  j=0
   for(b in seq(1,num_obs,num_obs/5)){
-    i=i+1
-    a<-paste('bucket_',i,sep="")
-    ex<-next.step[b:(b+num_obs/5-1),]
-    exp_return=mean(ex$expected_returns)
+    j=j+1
+    a<-paste('bucket_',j,sep="")
+    ex<-test[b:(b+num_obs/5-1),]
+    exp_return=mean(ex$pred)
     act_return=mean(mean(ex$ln_returns))
     ret<-c(exp_return,act_return)
-    buckets_return<-rbind(buckets_return,ret)
+    if(j==1){
+      buckets_return<-ret
+    }else{
+      buckets_return<-rbind(buckets_return, ret)
+    }
   }
   colnames(buckets_return)<-c('exp', 'act')
   rownames(buckets_return)<-1:5
-  assign(t_bucket, buckets_return)
-  returns_bucket_list<-c(returns_bucket_list, t_bucket)
+  assign(a,buckets_return)
+  bucket_list<-c(bucket_list, a)
 }
-
 #displaying the Data in a neat form
 for(b in 1:4){
-  bucketMatrix<-get(returns_bucket_list[b])
+  bucketMatrix<-get(bucket_list[b])
   dis<-vector()
   dis<-cbind(bucketMatrix[,1],rank(-bucketMatrix[,1]),bucketMatrix[,2],rank(-bucketMatrix[,2]))
   colnames(dis)<-c('expected return','expected rank','actual return','actual rank')
@@ -315,4 +264,3 @@ for(b in 1:4){
   cat("\n\nFor Date ", dataFile_dates[b+15],'\n\n')
   print(dis)
 }
-
